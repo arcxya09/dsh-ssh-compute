@@ -85,6 +85,7 @@ window.__ModuleLoader__.load({
       importAlready: 'already configured',
       importUnsupported: 'not supported',
       importUnsupportedHint: 'Uses {detail}, which this plugin has no field for; add it by hand if you need it.',
+      importBadName: 'The alias has characters this plugin cannot use in a name; rename it by hand.',
       importAdded: 'Added {count} server(s) to the form. Save to apply.',
       emptyServers: 'No server configured. The tool will refuse to run until you add one.',
       fieldName: 'Name',
@@ -162,6 +163,7 @@ window.__ModuleLoader__.load({
       importAlready: '已存在',
       importUnsupported: '不支持',
       importUnsupportedHint: '用了 {detail}，这个插件没有对应字段；确实需要就手动添加。',
+      importBadName: '这个别名的字符不能用作服务器名，需要手动改名。',
       importAdded: '已把 {count} 台服务器加入表单，记得保存。',
       emptyServers: '还没有服务器。添加之前工具会拒绝执行。',
       fieldName: '名称',
@@ -285,6 +287,10 @@ window.__ModuleLoader__.load({
       const added = []
       for (const entry of Array.isArray(entries) ? entries : []) {
         if (picked[entry.alias] !== true) continue
+        // Defense in depth: the form disables these rows, and the merge refuses them
+        // too so a caller cannot import something the Host would then drop.
+        if (entry.nameOk === false) continue
+        if (Array.isArray(entry.unsupported) && entry.unsupported.length > 0) continue
         const name = String(entry.name ?? entry.alias ?? '').trim()
         if (name === '' || taken.has(name.toLowerCase())) continue
         taken.add(name.toLowerCase())
@@ -344,7 +350,7 @@ window.__ModuleLoader__.load({
       if (subject.kind === 'item') return null
       if (subject.pkg === undefined || subject.pkg === null) return null
       if (subject.pkg.name !== PACKAGE) return null
-      return h(DetailServers, { t: translator(props.t), getSource: props.getSource })
+      return h(DetailServers, { t: translator(props.t), source: props.source })
     }
 
     /**
@@ -353,7 +359,7 @@ window.__ModuleLoader__.load({
      * page reload.
      */
     function DetailServers(props) {
-      const source = typeof props.getSource === 'function' ? props.getSource() : undefined
+      const source = props.source
       const snapshot = useSnapshot(source)
       return h(ServerList, { t: props.t, key: snapshot?.revision ?? 0 })
     }
@@ -614,28 +620,33 @@ window.__ModuleLoader__.load({
 
       // Re-seed from the Host whenever it publishes a new accepted section, so a
       // saved write, a rejected one, or another window's change is visible.
+      // Re-seed the fields, but leave the note alone: a successful save publishes a
+      // new section, and clearing here would wipe the "saved" line a moment after
+      // it appeared. An edit clears the note through the field handlers instead.
       useEffect(() => {
         setDraft(toDraft(value))
-        setNote(undefined)
       }, [value, revision])
 
       const writable = snapshot?.writable === true
       const disabled = !writable || busy
       const dirty = !sameDraft(value, draft)
 
-      const patch = (key, value) => setDraft((current) => ({ ...current, [key]: value }))
-      const patchServer = (index, key, value) => setDraft((current) => ({
+      const patch = (key, value) => {
+        setNote(undefined)
+        setDraft((current) => ({ ...current, [key]: value }))
+      }
+      const patchServer = (index, key, value) => (setNote(undefined), setDraft((current) => ({
         ...current,
         servers: current.servers.map((server, position) => (position === index ? { ...server, [key]: value } : server)),
-      }))
-      const addServer = () => setDraft((current) => ({
+      })))
+      const addServer = () => (setNote(undefined), setDraft((current) => ({
         ...current,
         servers: [...current.servers, { name: '', host: '', user: 'root', port: 22, keyPath: '', keyText: '' }],
-      }))
-      const removeServer = (index) => setDraft((current) => ({
+      })))
+      const removeServer = (index) => (setNote(undefined), setDraft((current) => ({
         ...current,
         servers: current.servers.filter((_server, position) => position !== index),
-      }))
+      })))
 
       const save = async () => {
         if (source === undefined) return
@@ -704,10 +715,13 @@ window.__ModuleLoader__.load({
         closeImport()
       }
 
-      if (source === undefined) {
+      if (snapshot === undefined) {
+        // No record attached yet: the Host may never serve this namespace, or it
+        // has not answered. Either way there is nothing to fill in, so say that
+        // rather than showing a spinner that can never finish.
         return h('p', { className: 'dsh-ssh-compute-hint dsh-ssh-compute-error' }, t('configUnavailable'))
       }
-      if (snapshot === undefined || (snapshot.status === 'loading' && value === undefined)) {
+      if (snapshot.status === 'loading' && value === undefined) {
         return h('p', { className: 'dsh-ssh-compute-hint' }, t('configLoading'))
       }
       if (snapshot.status === 'unavailable') {
@@ -768,7 +782,8 @@ window.__ModuleLoader__.load({
               const exists = name !== ''
                 && draft.servers.some((server) => server.name.trim().toLowerCase() === name.toLowerCase())
               const unsupported = Array.isArray(entry.unsupported) ? entry.unsupported : []
-              const blocked = exists || unsupported.length > 0
+              const badName = entry.nameOk === false
+              const blocked = exists || badName || unsupported.length > 0
               return h('label', {
                 key: entry.alias,
                 className: blocked ? 'dsh-ssh-import-row dsh-ssh-import-blocked' : 'dsh-ssh-import-row',
@@ -783,12 +798,15 @@ window.__ModuleLoader__.load({
                 h('span', { className: 'dsh-ssh-import-alias' },
                   entry.alias,
                   exists ? h('span', { className: 'dsh-ssh-import-tag' }, t('importAlready')) : null,
-                  !exists && unsupported.length > 0
+                  !exists && (badName || unsupported.length > 0)
                     ? h('span', { className: 'dsh-ssh-import-tag' }, t('importUnsupported'))
                     : null),
                 h('span', { className: 'dsh-ssh-compute-target' }, `${entry.user}@${entry.host}:${entry.port}`),
                 entry.keyPath ? h('span', { className: 'dsh-ssh-compute-key' }, entry.keyPath) : null,
-                !exists && unsupported.length > 0
+                !exists && badName
+                  ? h('span', { className: 'dsh-ssh-compute-key dsh-ssh-compute-error' }, t('importBadName'))
+                  : null,
+                !exists && !badName && unsupported.length > 0
                   ? h('span', { className: 'dsh-ssh-compute-key dsh-ssh-compute-error' },
                     t('importUnsupportedHint', { detail: unsupported.join(', ') }))
                   : null,
@@ -894,7 +912,7 @@ window.__ModuleLoader__.load({
     function ConfigEntry(props) {
       const t = translator(props.t)
       const pageForm = props.form
-      const recordSource = typeof props.getSource === 'function' ? props.getSource() : props.source
+      const recordSource = props.source
       const pageSource = useMemo(() => (pageForm === undefined ? undefined : sourceFromProp(pageForm)), [pageForm])
       const source = pageSource ?? recordSource
       const snapshot = useSnapshot(source)
@@ -930,8 +948,32 @@ window.__ModuleLoader__.load({
         // The configuration source. The bundle page's slot supplies only `view`,
         // so the page asks `configForms` for this row's form itself; the row page
         // still passes its own `form`, which `ConfigEntry` prefers when present.
-        const configState = { source: undefined }
-        const getSource = () => configState.source
+        // `configForms` attaches its record ASYNCHRONOUSLY, after this plugin's
+        // apply and after the entry may already have rendered. A getter read during
+        // render would stay stale in that window and leave the page saying the
+        // configuration is unavailable, so the handle below is stable and notifies
+        // its subscribers when the record arrives or goes away.
+        const configState = { source: undefined, listeners: new Set() }
+        const setSource = (next) => {
+          configState.source = next
+          for (const listener of [...configState.listeners]) {
+            try {
+              listener()
+            } catch (error) {
+              console.warn('dsh-ssh-compute: a configuration subscriber failed', error)
+            }
+          }
+        }
+        const configSource = {
+          read: () => (configState.source === undefined ? undefined : configState.source.read()),
+          subscribe: (listener) => {
+            configState.listeners.add(listener)
+            return () => { configState.listeners.delete(listener) }
+          },
+          mutate: (ops, revision) => (configState.source === undefined
+            ? Promise.resolve(false)
+            : configState.source.mutate(ops, revision)),
+        }
         ctx.inject(['configForms'], (inner) => {
           const configForms = inner.configForms
           if (configForms === undefined || configForms === null || typeof configForms.get !== 'function') return
@@ -940,8 +982,8 @@ window.__ModuleLoader__.load({
           const namespaces = [ROW_ID, `include:${ROW_ID}`]
           const attach = (served) => {
             const namespace = namespaces.find((candidate) => served.has(candidate)) ?? ROW_ID
-            configState.source = sourceFromRecord(configForms.get(namespace))
-            return () => { configState.source = undefined }
+            setSource(sourceFromRecord(configForms.get(namespace)))
+            return () => setSource(undefined)
           }
           if (typeof configForms.whileServed === 'function') {
             const dispose = configForms.whileServed(namespaces, attach)
@@ -958,20 +1000,20 @@ window.__ModuleLoader__.load({
           name: 'plugins.row.config',
           key: `${PACKAGE}#${ROW_ID}`,
           locale: LOCALE_NAMESPACE,
-        }, (props) => h(ConfigEntry, { ...props, getSource })))
+        }, (props) => h(ConfigEntry, { ...props, source: configSource })))
 
         ctx.slots.inject('plugins.bundle.config', () => ctx.slots.register({
           name: 'plugins.bundle.config',
           key: PACKAGE,
           locale: LOCALE_NAMESPACE,
-        }, (props) => h(ConfigEntry, { ...props, getSource })))
+        }, (props) => h(ConfigEntry, { ...props, source: configSource })))
 
         ctx.slots.inject('plugins.detail.section', () => ctx.slots.register({
           name: 'plugins.detail.section',
           id: 'dsh-ssh-compute.servers',
           order: 60,
           locale: LOCALE_NAMESPACE,
-        }, (props) => h(ComputeSection, { ...props, getSource })))
+        }, (props) => h(ComputeSection, { ...props, source: configSource })))
       },
     }
   },

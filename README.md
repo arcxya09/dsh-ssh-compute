@@ -75,7 +75,10 @@ Everything is on the plugin's own page: **Plugins → SSH compute**.
 
 Each server has:
 
-- `name`, the short name the tool's `server` argument uses, e.g. `box`
+- `name`, the short name the tool's `server` argument uses, e.g. `box`. It becomes
+  a directory name and part of every job id, so it may only use letters, digits,
+  `.`, `-` and `_`; a name with a space or a shell character is refused rather than
+  silently mangled.
 - `host`, `port`, `user`
 - `keyPath`, a private key file. Leave it empty and the plugin tries the keys it
   finds in `~/.ssh` (`id_ed25519`, `id_ecdsa`, `id_rsa`, …) in order of
@@ -143,7 +146,8 @@ permission system:
 - `run` refuses commands that would destroy the machine — `rm -rf /`, `mkfs`,
   `dd` onto a block device, a fork bomb, `shutdown`/`reboot`
 - `upload` refuses to write into `/etc`, `/boot`, `/usr`, `/bin`, `/sbin`,
-  `/lib*`, `/dev`, `/proc`, `/sys`, `/var/lib`
+  `/lib*`, `/dev`, `/proc`, `/sys`, `/var/lib`. `.` and `..` are resolved first,
+  so `/tmp/../etc/passwd` is refused like `/etc/passwd`.
 
 Turn it off with the `guard` setting.
 

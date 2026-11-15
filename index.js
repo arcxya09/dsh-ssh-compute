@@ -321,7 +321,7 @@ function createTool(context) {
         const serverName = typeof args.server === 'string' ? args.server.trim() : ''
         if (serverName === '') {
           if (config.servers.length === 0) {
-            return { text: 'no servers configured — add one in Settings → Plugins → SSH compute' }
+            return { text: 'no servers configured — add one in Plugins → SSH compute' }
           }
           const rows = config.servers.map((server) => {
             const key = keyStore.describe(server)
@@ -452,6 +452,14 @@ export function apply(ctx, settings = {}) {
       if (request.method !== 'POST') {
         response.writeHead(405, { allow: 'POST' })
         response.end()
+        return
+      }
+      // A cross-origin `text/plain` POST is a CORS "simple request" and would reach
+      // this handler without a preflight, letting any local page make the Host open
+      // an SSH connection. Demanding JSON forces the preflight, which this server
+      // answers with 405.
+      if (!String(request.headers?.['content-type'] ?? '').toLowerCase().startsWith('application/json')) {
+        answerJson(response, 415, { ok: false, error: 'content-type must be application/json' })
         return
       }
       try {
