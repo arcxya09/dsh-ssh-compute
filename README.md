@@ -226,6 +226,31 @@ Turn it off with the `guard` setting.
 - **Jobs outlive DSH.** That is the point, but it also means nothing stops a job
   when you close the app; `kill` is the way to stop one.
 
+## Where the time goes
+
+Measured against one Ubuntu 24.04 host, medians of repeated calls. The numbers
+that matter are the ones that were fixed, but the profile is here so nobody has
+to guess where a slow call comes from.
+
+| step | cost |
+| --- | --- |
+| one ssh round trip, direct | 870–940 ms |
+| the same, with `reuseConnection` | 119 ms |
+| the remote launcher (staging one job) | 45 ms, was 67 |
+| `recordResources` on the critical path | ~0 ms, was 43 |
+| `status`, remote shell work | 9 ms, was 23 |
+| `wait`, overshoot past the job's own end | ~0.1 s, was up to 1 s |
+| `list` walking 1000 job directories | 23 ms |
+| the settings form rendering 50 servers | 0.7 ms |
+| local work per call (config, guard, wrapper text) | 1–3 µs |
+
+What that says: on Windows, where connections cannot be reused, the round trip
+*is* the cost and the remote shell work is noise. On Linux or macOS with reuse on,
+the remote shell work is a tenth of a call, which is why the launcher was worth
+rewriting — one `printf` instead of a `cat` per field, the environment probes moved
+off the critical path, and the memory sampler started before them so a short job is
+still sampled.
+
 ## Compatibility
 
 Requires DSH `>=0.2.2-rc.3` (`engines.dsh` refuses older hosts, because the
