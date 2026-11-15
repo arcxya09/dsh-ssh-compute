@@ -14,7 +14,7 @@ import { resolveConfig, selectServer, serverNameFromJobId } from './lib/config.j
 import { createKeyStore } from './lib/keys.js'
 import { assertCommandAllowed, assertUploadAllowed } from './lib/guard.js'
 import { startJob, waitJob, jobStatus, readLog, killJob, listJobs, probeServer } from './lib/remote.js'
-import { closeControlMasters } from './lib/ssh.js'
+import { cleanupControlSockets } from './lib/ssh.js'
 import { readSshConfigFile } from './lib/sshconfig.js'
 import { upload, download } from './lib/transfer.js'
 import { loadSchemaBuilder } from './lib/schema.js'
@@ -475,7 +475,7 @@ export function apply(ctx, settings = {}) {
   ctx.effect(() => () => keyStore.dispose(), 'dsh-ssh-compute: key files')
   // Masters started with ControlPersist expire on their own; this only tidies the
   // socket files so a long-lived profile does not collect them.
-  ctx.effect(() => () => closeControlMasters(), 'dsh-ssh-compute: ssh masters')
+  ctx.effect(() => () => cleanupControlSockets(), 'dsh-ssh-compute: ssh masters')
 
   const disposeTool = ctx.tools.register(createTool({ settings, keyStore }))
   ctx.effect(() => disposeTool, 'dsh-ssh-compute: tool')

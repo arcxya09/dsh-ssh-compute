@@ -1,6 +1,6 @@
 {
   "name": "dsh-ssh-compute",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Runs compute-heavy work on remote SSH servers: one tool that starts background jobs over SSH, reads their logs, kills them, and moves files both ways.",
   "type": "module",
   "main": "index.js",
