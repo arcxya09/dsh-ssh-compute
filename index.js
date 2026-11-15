@@ -14,6 +14,7 @@ import { resolveConfig, selectServer, serverNameFromJobId } from './lib/config.j
 import { createKeyStore } from './lib/keys.js'
 import { assertCommandAllowed, assertUploadAllowed } from './lib/guard.js'
 import { startJob, waitJob, jobStatus, readLog, killJob, listJobs, probeServer } from './lib/remote.js'
+import { closeControlMasters } from './lib/ssh.js'
 import { readSshConfigFile } from './lib/sshconfig.js'
 import { upload, download } from './lib/transfer.js'
 import { loadSchemaBuilder } from './lib/schema.js'
@@ -63,6 +64,10 @@ function defineConfig(builder) {
     maxFileSizeMb: builder.number().default(10240).description('单个文件大小上限（MiB），由任务包装脚本用 `ulimit -f` 施加；0 表示不限制。超限任务收到 SIGXFSZ，以 153 退出。').volatile(),
     minFreeSpaceMb: builder.number().default(1024).description('任务目录所在卷的可用空间低于此值（MiB）时拒绝启动新任务。').volatile(),
     waitTimeoutMs: builder.number().default(300000).description('`wait` 动作的默认等待上限（毫秒）。').volatile(),
+    maxRunningJobs: builder.number().default(64).description('同一台服务器上同时运行的任务上限；`run` 超过它会被拒绝并报出当前数量。设为 0 表示不限制。').volatile(),
+    reuseConnection: builder.boolean().default(true).description('复用 ssh 连接（ControlMaster）。仅在 Linux/macOS 上生效：Windows 的 OpenSSH 在设置 ControlPath 后会直接断开连接，所以那里始终不用。').volatile(),
+    reuseIdleSeconds: builder.number().default(300).description('复用的连接空闲多少秒后关闭。').volatile(),
+    recordResources: builder.boolean().default(true).description('记录任务环境（hostname/内核/编译器版本）与峰值内存。').volatile(),
   }).description('dsh-ssh-compute 的远程服务器与默认值。')
 }
 
@@ -331,6 +336,8 @@ function createTool(context) {
           status.started > 0 ? `started: ${new Date(status.started * 1000).toISOString()}` : 'started: unknown',
           `log: ${status.logSize} bytes`,
         ]
+        if (status.durationSeconds !== undefined) lines.push(`duration: ${status.durationSeconds} s`)
+        if (status.peakRssKb !== undefined) lines.push(`peak memory: ${Math.round(status.peakRssKb / 1024)} MiB`)
         if (status.label !== '') lines.push(`command: ${status.label.split('\n')[0].slice(0, 400)}`)
         if (status.logTail.trim() !== '') {
           lines.push('', `--- last ${Math.min(args.lines ?? config.logTailLines, 400)} lines ---`, status.logTail.trimEnd())
@@ -466,6 +473,9 @@ function createTool(context) {
 export function apply(ctx, settings = {}) {
   const keyStore = createKeyStore()
   ctx.effect(() => () => keyStore.dispose(), 'dsh-ssh-compute: key files')
+  // Masters started with ControlPersist expire on their own; this only tidies the
+  // socket files so a long-lived profile does not collect them.
+  ctx.effect(() => () => closeControlMasters(), 'dsh-ssh-compute: ssh masters')
 
   const disposeTool = ctx.tools.register(createTool({ settings, keyStore }))
   ctx.effect(() => disposeTool, 'dsh-ssh-compute: tool')

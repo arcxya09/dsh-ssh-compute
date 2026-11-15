@@ -58,7 +58,7 @@ One tool, `ssh-compute`, with an `action` that selects the verb:
 | --- | --- |
 | `run` | starts a command in the background on a server and returns a job id immediately |
 | `wait` | blocks until the job ends or the timeout, then returns the exit code and the log tail |
-| `status` | state, pid, start time, exit code and the last log lines of one job |
+| `status` | state, pid, start time, exit code, duration, peak memory and the last log lines of one job |
 | `logs` | the job's output, either from a byte `offset` (incremental) or as the last N lines |
 | `kill` | terminates the job's process group |
 | `list` | the configured servers, or the jobs on one server |
@@ -112,6 +112,16 @@ Three settings bound what a job can do to the server:
 - `minFreeSpaceMb` (default 1024): `run` refuses to start when the volume holding
   the jobs is below it, naming the numbers.
 - `waitTimeoutMs` (default 300000): the default ceiling for `wait`.
+- `maxRunningJobs` (default 64, `0` disables): `run` refuses to start a job when
+  that many are already running under the same root, and names the count and the
+  limit. Counting happens inside the launcher, so the check costs no extra round
+  trip.
+
+Connection reuse and job metadata:
+
+- `reuseConnection` (default on) multiplexes calls over one ssh master; see below.
+- `reuseIdleSeconds` (default 300): how long an idle master lingers.
+- `recordResources` (default on): write `env.txt` and sample peak memory.
 
 With exactly one server, `server` may be omitted. With several it is required,
 except that `status`, `logs` and `kill` read it from the job id.
@@ -132,6 +142,20 @@ arguments. An entry whose block uses `ProxyCommand`, `LocalCommand` or
 line, and importing it would connect somewhere other than the user's own ssh
 does. `Include` and `Match` are reported, not followed.
 
+## Connection reuse
+
+Every call opens its own ssh connection, which costs a full handshake. With
+`reuseConnection` on, the first call creates an `ssh` master under the system
+temp directory and later calls ride it. Measured against one Ubuntu 24.04 host:
+**969 ms per call without, 199 ms with** (4.9×), because only the handshake
+disappears — the remote command still runs.
+
+This is off on Windows and cannot be turned on there: Windows OpenSSH accepts the
+`ControlMaster` options and prints them in `ssh -G`, but setting a `ControlPath`
+makes it fail with `getsockname failed: Not a socket` and drop the connection it
+was opening (measured on `OpenSSH_for_Windows_9.5p2`). The plugin therefore never
+emits those options on `win32`, rather than trusting what ssh says about itself.
+
 ## On the server
 
 Every job lives in `<remoteRoot>/<jobId>/` (default `~/dsh-compute`):
@@ -142,8 +166,15 @@ started     epoch seconds, written before the process starts
 pid         the process-group leader
 output.log  combined stdout and stderr
 exit        the exit code, written when the command finishes
+ended       epoch seconds when it finished
+duration    seconds it ran, measured on the server
+rss         peak memory of the whole job tree, in KiB (Linux only)
+env.txt     hostname, user, cwd, kernel, start time and the python/gcc versions found
 killed      present when this plugin stopped the job
 ```
+
+`env.txt` exists so a result can be attributed to a compiler and an OS later; turn
+it off with `recordResources` if the extra probes bother you.
 
 Nothing is cleaned up automatically. Delete old directories when you no longer
 want them:

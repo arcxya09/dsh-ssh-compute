@@ -31,7 +31,9 @@ window.__ModuleLoader__.load({
 
     /** The scalar settings, in the order the form draws them. */
     const NUMBER_FIELDS = ['connectTimeoutMs', 'commandTimeoutMs', 'logTailLines', 'maxLogBytes', 'listLimit',
-      'maxFileSizeMb', 'minFreeSpaceMb', 'waitTimeoutMs']
+      'maxFileSizeMb', 'minFreeSpaceMb', 'waitTimeoutMs', 'maxRunningJobs', 'reuseIdleSeconds']
+    /** Switches, drawn as checkboxes in the same grid. */
+    const BOOLEAN_FIELDS = ['guard', 'reuseConnection', 'recordResources']
     const SERVER_FIELDS = [
       { key: 'name', label: 'fieldName', hint: 'hintName' },
       { key: 'host', label: 'fieldHost', hint: 'hintHost' },
@@ -101,6 +103,10 @@ window.__ModuleLoader__.load({
       fieldMaxFileSizeMb: 'Max file size (MiB)',
       fieldMinFreeSpaceMb: 'Minimum free space (MiB)',
       fieldWaitTimeoutMs: 'Default wait timeout (ms)',
+      fieldMaxRunningJobs: 'Jobs per server',
+      fieldReuseConnection: 'Reuse ssh connections',
+      fieldReuseIdleSeconds: 'Idle reuse (s)',
+      fieldRecordResources: 'Record job environment',
       hintName: 'The short name the tool uses, e.g. gpu01.',
       hintHost: 'Hostname or IP address.',
       hintKeyPath: 'Empty: the first key in ~/.ssh, then ssh\'s own default.',
@@ -184,6 +190,10 @@ window.__ModuleLoader__.load({
       fieldMaxFileSizeMb: '单文件上限（MiB）',
       fieldMinFreeSpaceMb: '最小可用空间（MiB）',
       fieldWaitTimeoutMs: 'wait 默认超时（毫秒）',
+      fieldMaxRunningJobs: '每台服务器并发上限',
+      fieldReuseConnection: '复用 ssh 连接',
+      fieldReuseIdleSeconds: '复用空闲（秒）',
+      fieldRecordResources: '记录任务环境',
       hintName: '工具里引用它的短名字，例如 gpu01。',
       hintHost: '主机名或 IP。',
       hintKeyPath: '留空：先用 ~/.ssh 里的第一个私钥，再交给 ssh 自己的默认行为。',
@@ -567,6 +577,10 @@ window.__ModuleLoader__.load({
         maxFileSizeMb: source.maxFileSizeMb ?? '',
         minFreeSpaceMb: source.minFreeSpaceMb ?? '',
         waitTimeoutMs: source.waitTimeoutMs ?? '',
+        maxRunningJobs: source.maxRunningJobs ?? '',
+        reuseIdleSeconds: source.reuseIdleSeconds ?? '',
+        reuseConnection: source.reuseConnection !== false,
+        recordResources: source.recordResources !== false,
       }
     }
 
@@ -617,7 +631,7 @@ window.__ModuleLoader__.load({
         if (nextServers.length === 0) ops.push({ op: 'unset', path: ['servers'] })
         else ops.push({ op: 'set', path: ['servers'], value: nextServers })
       }
-      const scalars = ['remoteRoot', 'guard', ...NUMBER_FIELDS]
+      const scalars = ['remoteRoot', ...BOOLEAN_FIELDS, ...NUMBER_FIELDS]
       for (const key of scalars) {
         const before = baseline[key]
         const after = draft[key]
@@ -881,14 +895,18 @@ window.__ModuleLoader__.load({
             disabled,
             onChange: (value) => patch('remoteRoot', value),
           }),
-          h('label', { className: 'dsh-ssh-check', style: { alignSelf: 'end', paddingBottom: '6px' } },
-            h('input', {
-              type: 'checkbox',
-              checked: draft.guard,
-              disabled,
-              onChange: (event) => patch('guard', event.target.checked),
-            }),
-            h('span', null, t('fieldGuard'))),
+          BOOLEAN_FIELDS.map((key) => h('label', {
+            key,
+            className: 'dsh-ssh-check',
+            style: { alignSelf: 'end', paddingBottom: '6px' },
+          },
+          h('input', {
+            type: 'checkbox',
+            checked: draft[key] !== false,
+            disabled,
+            onChange: (event) => patch(key, event.target.checked),
+          }),
+          h('span', null, t(`field${key.charAt(0).toUpperCase()}${key.slice(1)}`)))),
           NUMBER_FIELDS.map((key) => h(Field, {
             key,
             label: t(`field${key.charAt(0).toUpperCase()}${key.slice(1)}`),
