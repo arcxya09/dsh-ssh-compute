@@ -258,6 +258,31 @@ settings form uses the `plugins.row.config` slot and the `configForms` client
 service). Verified against 0.2.2-rc.3 on Windows 11 (Windows OpenSSH,
 `tar.exe`) with Ubuntu 24.04 remotes.
 
+## Releasing
+
+`.github/workflows/release.yml` publishes on a tag:
+
+```bash
+# bump the version, then tag it with a matching name
+git commit -am "1.3.0"
+git tag v1.3.0
+git push --follow-tags
+```
+
+The workflow refuses a tag that does not match `package.json`, syntax-checks
+every source file, verifies the manifest still names the bundle patch, and
+publishes with `--provenance` through npm **trusted publishing** (OIDC): no
+token and no one-time password. A prerelease version such as `1.3.0-rc.1` goes to
+the `next` dist-tag instead of `latest`.
+
+That needs one registration, once, on npmjs.com: **package settings → Trusted
+publishing** → owner `arcxya09`, repository `dsh-ssh-compute`, workflow filename
+`release.yml`, environment empty. Before that registration exists the workflow
+fails at the last step, and the fix is the registration rather than a token.
+
+Publishing by hand from a checkout also works, for an account whose token may
+still write: `npm publish --access public`.
+
 ## License
 
 MIT. See [LICENSE](LICENSE).

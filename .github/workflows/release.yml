@@ -1,0 +1,86 @@
+name: release
+
+# Publishing runs on a tag, never on a branch push, so the version that reaches
+# npm is the one a human chose to release.
+#
+# Trusted publishing (npm OIDC) is what makes the last step possible without a
+# token or a one-time password: the runner proves its identity to npm with the
+# job's id-token, and npm checks that this repository and this workflow file are
+# the ones registered for the package. Register it once at
+# https://www.npmjs.com/package/dsh-ssh-compute/settings → Trusted publishing:
+#   organization/user: arcxya09
+#   repository:        dsh-ssh-compute
+#   workflow filename: release.yml
+#   environment:       (leave empty)
+#
+# Before that registration exists, `npm publish` here fails with 404/403 and the
+# fix is the registration, not a token.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  # A manual run re-publishes the current package.json version; useful after a
+  # failed release, and harmless because npm rejects a version that already exists.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+
+      # Trusted publishing needs npm 11.5 or newer; the one bundled with the
+      # runner image can be older.
+      - run: npm install --global npm@latest
+
+      - name: The tag names the version that is about to be published
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          set -eu
+          tag="${GITHUB_REF_NAME#v}"
+          version="$(node -p "require('./package.json').version")"
+          if [ "$tag" != "$version" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match package.json $version"
+            exit 1
+          fi
+
+      # Cheap checks that would otherwise become a broken release: a syntax error,
+      # or a manifest that no longer names the files DSH needs.
+      - name: The package loads and the manifest is complete
+        run: |
+          set -eu
+          for file in index.js client.js lib/*.js; do node --check "$file"; done
+          node -e '
+            const fs = require("fs")
+            const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"))
+            const patch = pkg.dsh?.bundle?.patch
+            if (!patch) throw new Error("package.json has no dsh.bundle.patch")
+            if (!fs.existsSync(patch.slice(2))) throw new Error("bundle patch " + patch + " is missing")
+            for (const file of ["index.js", "client.js", "cordis.patch.yml", "locale/en.json", "locale/zh.json"]) {
+              if (!fs.existsSync(file)) throw new Error("missing " + file)
+            }
+            console.log("manifest ok:", pkg.name + "@" + pkg.version)
+          '
+
+      - name: Publish
+        run: |
+          set -eu
+          version="$(node -p "require('./package.json').version")"
+          case "$version" in
+            *-*) # a prerelease is not what `latest` should point at
+              npm publish --provenance --access public --tag next
+              ;;
+            *)
+              npm publish --provenance --access public
+              ;;
+          esac
