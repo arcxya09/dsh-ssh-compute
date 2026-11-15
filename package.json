@@ -30,7 +30,7 @@
     }
   },
   "engines": {
-    "dsh": ">=0.2.1-rc.2"
+    "dsh": ">=0.2.2-rc.3"
   },
   "dsh": {
     "bundle": {
@@ -53,7 +53,7 @@
     "compute",
     "tool"
   ],
-  "author": "shenyp09",
+  "author": "arcxya09",
   "license": "MIT",
   "repository": {
     "type": "git",

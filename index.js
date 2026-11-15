@@ -45,7 +45,7 @@ const Schema = await loadSchemaBuilder()
 function defineConfig(builder) {
   return builder.object({
     servers: builder.array(builder.object({
-      name: builder.string().default('').description('短名字，工具的 `server` 参数用它引用这台机器，如 ali。'),
+      name: builder.string().default('').description('短名字，工具的 `server` 参数用它引用这台机器，如 gpu01。'),
       host: builder.string().default('').description('地址或域名。'),
       port: builder.number().default(22).description('SSH 端口，默认 22。'),
       user: builder.string().default('').description('登录用户名。'),
@@ -148,7 +148,7 @@ function createTool(context) {
         },
         jobId: {
           type: 'string',
-          description: 'status/logs/kill: the id `run` returned, e.g. `ali-20261115-020000-a1b2`.',
+          description: 'status/logs/kill: the id `run` returned, e.g. `gpu01-20261115-020000-a1b2`.',
         },
         cwd: {
           type: 'string',

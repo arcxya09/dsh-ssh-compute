@@ -1,7 +1,7 @@
 # dsh-ssh-compute
 
-A [DeepSeek Harness](https://github.com/deepseek-ai) plugin that hands the agent
-one remote machine over SSH, and nothing else.
+A DeepSeek Harness (DSH) plugin that hands the agent one remote machine over
+SSH, and nothing else.
 
 A job is a directory on the server. The plugin starts it, leaves it running, and
 reports what is there when asked. It never decides what "compute-heavy" means,
@@ -165,9 +165,10 @@ Turn it off with the `guard` setting.
 
 ## Compatibility
 
-Written against DSH `0.2.2-rc.3` and exercised on Windows 11 (Windows OpenSSH,
-`tar.exe`) against Ubuntu 24.04 remotes. The settings page needs the host's
-`configForms` client service, which ships with the Web GUI.
+Requires DSH `>=0.2.2-rc.3` (`engines.dsh` refuses older hosts, because the
+settings form uses the `plugins.row.config` slot and the `configForms` client
+service). Verified against 0.2.2-rc.3 on Windows 11 (Windows OpenSSH,
+`tar.exe`) with Ubuntu 24.04 remotes.
 
 ## License
 
