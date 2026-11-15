@@ -30,7 +30,8 @@ window.__ModuleLoader__.load({
     const LOCALE_NAMESPACE = 'dshSshCompute'
 
     /** The scalar settings, in the order the form draws them. */
-    const NUMBER_FIELDS = ['connectTimeoutMs', 'commandTimeoutMs', 'logTailLines', 'maxLogBytes', 'listLimit']
+    const NUMBER_FIELDS = ['connectTimeoutMs', 'commandTimeoutMs', 'logTailLines', 'maxLogBytes', 'listLimit',
+      'maxFileSizeMb', 'minFreeSpaceMb', 'waitTimeoutMs']
     const SERVER_FIELDS = [
       { key: 'name', label: 'fieldName', hint: 'hintName' },
       { key: 'host', label: 'fieldHost', hint: 'hintHost' },
@@ -38,6 +39,7 @@ window.__ModuleLoader__.load({
       { key: 'port', label: 'fieldPort', hint: undefined, number: true },
       { key: 'keyPath', label: 'fieldKeyPath', hint: 'hintKeyPath' },
       { key: 'keyText', label: 'fieldKeyText', hint: 'hintKeyText', multiline: true },
+      { key: 'extraArgs', label: 'fieldExtraArgs', hint: 'hintExtraArgs', wide: true },
     ]
 
     const en = {
@@ -94,6 +96,11 @@ window.__ModuleLoader__.load({
       fieldPort: 'Port',
       fieldKeyPath: 'Private key file',
       fieldKeyText: 'Private key contents',
+      fieldExtraArgs: 'Extra ssh arguments',
+      hintExtraArgs: 'Space-separated, passed straight to ssh, e.g. -J bastion. A value that needs its own spaces cannot be expressed here.',
+      fieldMaxFileSizeMb: 'Max file size (MiB)',
+      fieldMinFreeSpaceMb: 'Minimum free space (MiB)',
+      fieldWaitTimeoutMs: 'Default wait timeout (ms)',
       hintName: 'The short name the tool uses, e.g. gpu01.',
       hintHost: 'Hostname or IP address.',
       hintKeyPath: 'Empty: the first key in ~/.ssh, then ssh\'s own default.',
@@ -172,6 +179,11 @@ window.__ModuleLoader__.load({
       fieldPort: '端口',
       fieldKeyPath: '私钥文件路径',
       fieldKeyText: '私钥内容',
+      fieldExtraArgs: '额外 ssh 参数',
+      hintExtraArgs: '空格分隔，原样交给 ssh，例如 -J bastion。本身需要空格的参数无法在这里表达。',
+      fieldMaxFileSizeMb: '单文件上限（MiB）',
+      fieldMinFreeSpaceMb: '最小可用空间（MiB）',
+      fieldWaitTimeoutMs: 'wait 默认超时（毫秒）',
       hintName: '工具里引用它的短名字，例如 gpu01。',
       hintHost: '主机名或 IP。',
       hintKeyPath: '留空：先用 ~/.ssh 里的第一个私钥，再交给 ssh 自己的默认行为。',
@@ -287,8 +299,8 @@ window.__ModuleLoader__.load({
       const added = []
       for (const entry of Array.isArray(entries) ? entries : []) {
         if (picked[entry.alias] !== true) continue
-        // Defense in depth: the form disables these rows, and the merge refuses them
-        // too so a caller cannot import something the Host would then drop.
+        // Defense in depth: the form disables an unusable row, and the merge
+        // refuses it too so a caller cannot import what the Host would drop.
         if (entry.nameOk === false) continue
         if (Array.isArray(entry.unsupported) && entry.unsupported.length > 0) continue
         const name = String(entry.name ?? entry.alias ?? '').trim()
@@ -301,6 +313,7 @@ window.__ModuleLoader__.load({
           port: Number(entry.port ?? 22),
           keyPath: String(entry.keyPath ?? ''),
           keyText: '',
+          extraArgs: String(entry.extraArgs ?? ''),
         })
       }
       return { servers: [...servers, ...added], added }
@@ -541,6 +554,7 @@ window.__ModuleLoader__.load({
             port: server.port === undefined || server.port === null ? 22 : server.port,
             keyPath: typeof server.keyPath === 'string' ? server.keyPath : '',
             keyText: typeof server.keyText === 'string' ? server.keyText : '',
+            extraArgs: typeof server.extraArgs === 'string' ? server.extraArgs : '',
           }
         }),
         remoteRoot: typeof source.remoteRoot === 'string' ? source.remoteRoot : '',
@@ -550,6 +564,9 @@ window.__ModuleLoader__.load({
         logTailLines: source.logTailLines ?? '',
         maxLogBytes: source.maxLogBytes ?? '',
         listLimit: source.listLimit ?? '',
+        maxFileSizeMb: source.maxFileSizeMb ?? '',
+        minFreeSpaceMb: source.minFreeSpaceMb ?? '',
+        waitTimeoutMs: source.waitTimeoutMs ?? '',
       }
     }
 
@@ -582,6 +599,8 @@ window.__ModuleLoader__.load({
         if (keyPath !== '') entry.keyPath = keyPath
         const keyText = String(server.keyText ?? '')
         if (keyText.trim() !== '') entry.keyText = keyText
+        const extraArgs = String(server.extraArgs ?? '').trim()
+        if (extraArgs !== '') entry.extraArgs = extraArgs
         return entry
       })
     }
@@ -737,7 +756,7 @@ window.__ModuleLoader__.load({
           value: server[field.key],
           number: field.number === true,
           multiline: field.multiline === true,
-          wide: field.multiline === true,
+          wide: field.multiline === true || field.wide === true,
           disabled,
           onChange: (value) => patchServer(
             index,
@@ -803,6 +822,7 @@ window.__ModuleLoader__.load({
                     : null),
                 h('span', { className: 'dsh-ssh-compute-target' }, `${entry.user}@${entry.host}:${entry.port}`),
                 entry.keyPath ? h('span', { className: 'dsh-ssh-compute-key' }, entry.keyPath) : null,
+                entry.extraArgs ? h('span', { className: 'dsh-ssh-compute-key' }, `ssh ${entry.extraArgs}`) : null,
                 !exists && badName
                   ? h('span', { className: 'dsh-ssh-compute-key dsh-ssh-compute-error' }, t('importBadName'))
                   : null,

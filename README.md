@@ -57,6 +57,7 @@ One tool, `ssh-compute`, with an `action` that selects the verb:
 | action | what it does |
 | --- | --- |
 | `run` | starts a command in the background on a server and returns a job id immediately |
+| `wait` | blocks until the job ends or the timeout, then returns the exit code and the log tail |
 | `status` | state, pid, start time, exit code and the last log lines of one job |
 | `logs` | the job's output, either from a byte `offset` (incremental) or as the last N lines |
 | `kill` | terminates the job's process group |
@@ -66,8 +67,20 @@ One tool, `ssh-compute`, with an `action` that selects the verb:
 
 `run` never waits for the command. A training run or a long build would otherwise
 hold one tool call open for hours, and a cancelled call would lose the result.
-Poll `status` for the exit code and `logs` for progress; pass the `nextOffset` a
-`logs` answer returns to read only what is new.
+
+**Prefer `wait` over polling.** It holds one SSH connection on the remote side
+until the job writes its exit marker, so a five-minute job costs one round trip
+instead of a hundred:
+
+```
+[ssh-compute run]  started gpu01-20261115-054127-1fe1 on gpu01 (pid 292654)
+[ssh-compute wait] state: exited   exit: 0   waited: 96.4 s   … last 40 lines
+```
+
+The timeout is a ceiling, not a kill: when it elapses you get `state: still
+running` and the tail so far, and the job keeps going. Use `status`/`logs` for a
+cheap glance, and pass the `nextOffset` a `logs` answer returns to read only what
+is new.
 
 ## Configure
 
@@ -86,6 +99,19 @@ Each server has:
   ssh-agent decide.
 - `keyText`, paste key material instead. It is written to a `0600` file in the
   system temp directory and removed when the plugin unloads.
+- `extraArgs`, space-separated ssh arguments passed straight through, e.g.
+  `-J bastion` for a jump host or `-o UseKeychain=no`. They travel as argv, never
+  through a shell, so a value that needs its own spaces cannot be expressed here
+  (rsync transfers split the same string on spaces again).
+
+Three settings bound what a job can do to the server:
+
+- `maxFileSizeMb` (default 10240, `0` disables), applied by the job wrapper as
+  `ulimit -f`, so a run-away output dies on SIGXFSZ (exit 153) instead of filling
+  the disk. Core dumps are disabled unconditionally (`ulimit -c 0`).
+- `minFreeSpaceMb` (default 1024): `run` refuses to start when the volume holding
+  the jobs is below it, naming the numbers.
+- `waitTimeoutMs` (default 300000): the default ceiling for `wait`.
 
 With exactly one server, `server` may be omitted. With several it is required,
 except that `status`, `logs` and `kill` read it from the job id.
@@ -100,10 +126,11 @@ are appended to the form, and nothing is written until you press **Save**.
 Resolution follows ssh's own rules rather than appearance: the first value met
 while walking the file wins, so a `Host *` block above a host supplies that
 host's value too. Only plain aliases are offered; `Host *` and `Host *.corp`
-patterns are skipped. An entry whose block uses `ProxyCommand`, `ProxyJump`,
-`LocalCommand` or `RemoteCommand` is listed but not importable, because this
-plugin has no field for a proxy and importing it would connect somewhere other
-than the user's own ssh does. `Include` and `Match` are reported, not followed.
+patterns are skipped. `ProxyJump` is imported as `-J <host>` in the entry's extra
+arguments. An entry whose block uses `ProxyCommand`, `LocalCommand` or
+`RemoteCommand` is listed but not importable: a `ProxyCommand` is a shell command
+line, and importing it would connect somewhere other than the user's own ssh
+does. `Include` and `Match` are reported, not followed.
 
 ## On the server
 
@@ -156,9 +183,10 @@ Turn it off with the `guard` setting.
 - **Key authentication only.** There is no password path: ssh runs with
   `BatchMode=yes` so it can never stop on a password prompt. Use a key, or
   `~/.ssh/config` with an agent.
-- **No proxy field.** A host that needs `ProxyCommand`/`ProxyJump` cannot be
-  represented; the import lists it and refuses it instead of connecting somewhere
-  else.
+- **No `ProxyCommand`.** `ProxyJump` and any other plain ssh option work through
+  `extraArgs`, but a `ProxyCommand` is a shell command line and this plugin has
+  no field for it; the import lists such an entry and refuses it instead of
+  connecting somewhere else.
 - **Host keys are recorded, not verified.** ssh runs with
   `StrictHostKeyChecking=accept-new`: an unknown host key is written to
   `known_hosts` once, and a *changed* one is still refused.

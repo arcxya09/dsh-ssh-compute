@@ -13,7 +13,7 @@ import { resolve } from 'node:path'
 import { resolveConfig, selectServer, serverNameFromJobId } from './lib/config.js'
 import { createKeyStore } from './lib/keys.js'
 import { assertCommandAllowed, assertUploadAllowed } from './lib/guard.js'
-import { startJob, jobStatus, readLog, killJob, listJobs, probeServer } from './lib/remote.js'
+import { startJob, waitJob, jobStatus, readLog, killJob, listJobs, probeServer } from './lib/remote.js'
 import { readSshConfigFile } from './lib/sshconfig.js'
 import { upload, download } from './lib/transfer.js'
 import { loadSchemaBuilder } from './lib/schema.js'
@@ -51,6 +51,7 @@ function defineConfig(builder) {
       user: builder.string().default('').description('登录用户名。'),
       keyPath: builder.string().default('').description('私钥文件路径。留空则自动使用 ~/.ssh 下的第一个私钥；一个都没找到就不传 -i，交给 ssh 自己的配置和 agent。'),
       keyText: builder.string().default('').description('直接粘贴私钥内容（优先级高于 keyPath）。会写到系统临时目录的 0600 文件，插件卸载时删除。'),
+      extraArgs: builder.string().default('').description('额外的 ssh 参数，空格分隔，例如 `-J bastion` 或 `-o UseKeychain=no`。这些 token 直接进 argv、不经过 shell；因此值本身不能含空格（rsync 传输会把 `-e` 再按空格切一次）。'),
     }).description('一台远程服务器')).description('可用的远程服务器列表。省略 `server` 仅在只配了一台时有效。').volatile(),
     remoteRoot: builder.string().default('~/dsh-compute').description('远端任务目录。每个任务是其中的一个子目录，含 cmd.sh、pid、exit、output.log。').volatile(),
     guard: builder.boolean().default(true).description('拦截明显破坏性的远端命令（rm -rf /、mkfs、dd 到磁盘等）和往系统目录的上传。调用方传 allowDangerous: true 可放行。').volatile(),
@@ -59,6 +60,9 @@ function defineConfig(builder) {
     logTailLines: builder.number().default(40).description('status 顺带返回的日志行数；0 表示不返回。').volatile(),
     maxLogBytes: builder.number().default(65536).description('logs 一次最多返回的字节数。').volatile(),
     listLimit: builder.number().default(60).description('list 最多返回多少个任务。').volatile(),
+    maxFileSizeMb: builder.number().default(10240).description('单个文件大小上限（MiB），由任务包装脚本用 `ulimit -f` 施加；0 表示不限制。超限任务收到 SIGXFSZ，以 153 退出。').volatile(),
+    minFreeSpaceMb: builder.number().default(1024).description('任务目录所在卷的可用空间低于此值（MiB）时拒绝启动新任务。').volatile(),
+    waitTimeoutMs: builder.number().default(300000).description('`wait` 动作的默认等待上限（毫秒）。').volatile(),
   }).description('dsh-ssh-compute 的远程服务器与默认值。')
 }
 
@@ -128,10 +132,12 @@ function createTool(context) {
       properties: {
         action: {
           type: 'string',
-          enum: ['run', 'status', 'logs', 'kill', 'list', 'upload', 'download'],
+          enum: ['run', 'wait', 'status', 'logs', 'kill', 'list', 'upload', 'download'],
           description:
-            '`run` starts a job; `status` reports one job; `logs` reads its output; `kill` stops it; ' +
-            '`list` shows the servers, or the jobs on one server; `upload`/`download` copy files.',
+            '`run` starts a job; `wait` blocks until it finishes (or the timeout) and returns the exit ' +
+            'code plus the log tail — prefer it over polling; `status` reports one job; `logs` reads its ' +
+            'output; `kill` stops it; `list` shows the servers, or the jobs on one server; ' +
+            '`upload`/`download` copy files.',
         },
         server: {
           type: 'string',
@@ -193,6 +199,12 @@ function createTool(context) {
             'download: paths on the server, absolute or `~/…`; a trailing pattern is expanded by the ' +
             'server itself.',
         },
+        timeoutMs: {
+          type: 'number',
+          description:
+            'wait: how long to block, in milliseconds. The job keeps running when it elapses. ' +
+            'Defaults to `waitTimeoutMs` in the settings.',
+        },
         allowDangerous: {
           type: 'boolean',
           description: 'Permit a command the guard would otherwise refuse. Only for a genuinely intended write.',
@@ -249,6 +261,52 @@ function createTool(context) {
         }
       }
 
+      if (action === 'wait') {
+        if (typeof args.jobId !== 'string' || args.jobId === '') {
+          throw new Error('dsh-ssh-compute: `wait` needs `jobId`')
+        }
+        const server = jobServer(args.jobId)
+        const keyFile = keyStore.fileFor(server)
+        // The default is the configured patience; a caller may ask for less, and
+        // the job is untouched either way when it runs out.
+        const requested = Number(args.timeoutMs)
+        const timeoutMs = Number.isFinite(requested) && requested > 0
+          ? Math.min(requested, 6 * 60 * 60 * 1000)
+          : config.waitTimeoutMs
+        const outcome = await waitJob({
+          config,
+          server,
+          keyFile,
+          jobId: args.jobId,
+          signal,
+          timeoutMs,
+          tailLines: args.lines ?? config.logTailLines,
+        })
+        const seconds = Math.round(outcome.waitedMs / 100) / 10
+        const lines = outcome.state === 'exited'
+          ? [
+            `job: ${outcome.jobId} on ${server.name}`,
+            `state: exited${outcome.killed ? ' (killed)' : ''}`,
+            `exit: ${outcome.exitCode ?? 'unrecorded'}${outcome.exitCode === 153 ? ' (SIGXFSZ — hit maxFileSizeMb)' : ''}`,
+            `waited: ${seconds} s`,
+          ]
+          : [
+            `job: ${outcome.jobId} on ${server.name}`,
+            outcome.state === 'lost'
+              ? 'state: the process is gone but it never wrote an exit code'
+              : 'state: still running',
+            `waited: ${seconds} s`,
+            '',
+            outcome.state === 'lost'
+              ? 'read the log with action="logs" to see how far it got'
+              : 'call `wait` again, or `status`/`logs`, when you want more',
+          ]
+        if (outcome.logTail.trim() !== '') {
+          lines.push('', `--- last ${Math.min(args.lines ?? config.logTailLines, 400)} lines ---`, outcome.logTail.trimEnd())
+        }
+        return { text: lines.join('\n') }
+      }
+
       if (action === 'status') {
         if (typeof args.jobId !== 'string' || args.jobId === '') {
           throw new Error('dsh-ssh-compute: `status` needs `jobId`')
@@ -266,7 +324,9 @@ function createTool(context) {
         const lines = [
           `job: ${status.jobId} on ${server.name}`,
           `state: ${status.state}${status.killed ? ' (killed)' : ''}`,
-          status.exitCode === undefined ? 'exit: not yet recorded' : `exit: ${status.exitCode}`,
+          status.exitCode === undefined
+            ? 'exit: not yet recorded'
+            : `exit: ${status.exitCode}${status.exitCode === 153 ? ' (SIGXFSZ — hit maxFileSizeMb)' : ''}`,
           `pid: ${status.pid || 'unknown'}`,
           status.started > 0 ? `started: ${new Date(status.started * 1000).toISOString()}` : 'started: unknown',
           `log: ${status.logSize} bytes`,
