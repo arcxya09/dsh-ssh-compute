@@ -44,6 +44,12 @@ The tool is called `ssh-compute` and is registered process-wide by this bundle's
 Nothing is built or installed to use it: the package is plain ESM, has no runtime
 dependencies, and needs `ssh` on `PATH`.
 
+> **Network:** a git install fetches from github.com, so it needs a route there.
+> Behind a proxy, set `HTTPS_PROXY` for the DSH process or add
+> `https-proxy=…` to the profile's `.npmrc`; otherwise clone the repository and
+> install from the checkout path instead — that is exactly what a local
+> development install does.
+
 ## The tool
 
 One tool, `ssh-compute`, with an `action` that selects the verb:
