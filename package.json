@@ -1,0 +1,66 @@
+{
+  "name": "dsh-ssh-compute",
+  "version": "1.0.0",
+  "description": "Runs compute-heavy work on remote SSH servers: one tool that starts background jobs over SSH, reads their logs, kills them, and moves files both ways.",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "lib",
+    "client.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "README.md",
+    "LICENSE"
+  ],
+  "peerDependencies": {
+    "@deepseek-ai/schemastery": "^3.18.1"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/schemastery": {
+      "optional": true
+    }
+  },
+  "engines": {
+    "dsh": ">=0.2.1-rc.2"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-plugin-manager"
+      ]
+    }
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "ssh",
+    "remote",
+    "compute",
+    "tool"
+  ],
+  "author": "shenyp09",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/arcxya09/dsh-ssh-compute.git"
+  },
+  "homepage": "https://github.com/arcxya09/dsh-ssh-compute#readme",
+  "bugs": {
+    "url": "https://github.com/arcxya09/dsh-ssh-compute/issues"
+  }
+}

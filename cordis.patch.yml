@@ -1,0 +1,17 @@
+# This bundle inserts the ssh-compute tool process-wide, so every agent preset
+# gets it without declaring anything in the preset itself.
+#
+# Do NOT also add a `ssh-compute` row to a preset: DSH registers tools by name
+# and a second registration fails with
+# `tool "ssh-compute" is already registered in this scope`.
+#
+# The entry name is PATH-RELATIVE on purpose. DSH anchors a relative `name:` to
+# the directory of the patch file that declared it, so this row always loads
+# this bundle's own `index.js` whatever the package folder is called.
+#
+# No servers are declared here: a bundle that shipped somebody's host names would
+# connect the wrong machine for everyone who installs it. The settings page on the
+# plugin's own page is where servers are added.
+- insert:
+    - id: dsh-ssh-compute
+      name: './index.js'

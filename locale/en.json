@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "SSH compute",
+    "description": "Gives the agent one remote machine over SSH: start a long job there, watch its log, stop it, and move files both ways. Add servers under Settings → Plugins → SSH compute; the tool is called ssh-compute. Nothing is installed on the server, and the plugin installs nothing locally either — the agent probes the machine and decides what to run. Jobs keep running after DSH closes, and their logs stay in <remoteRoot>/<jobId> on the server until you delete them."
+  }
+}
