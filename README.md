@@ -142,6 +142,22 @@ arguments. An entry whose block uses `ProxyCommand`, `LocalCommand` or
 line, and importing it would connect somewhere other than the user's own ssh
 does. `Include` and `Match` are reported, not followed.
 
+## Status panel
+
+The plugin adds **Server status** to the left rail. It samples every configured
+server and shows, one row each: reachability, 1/5/15-minute load against the core
+count, memory used against total, free space where jobs live, how many jobs are
+running, uptime, and a twenty-minute trend of the 1-minute load.
+
+- One poll is one SSH connection per server, all servers in parallel, and nothing
+  is installed on them. A server that cannot be reached is reported in its row
+  rather than blanking the panel.
+- Polling every 30 s stops while the document is hidden, so a background tab does
+  not open connections all day. The trend lives in the browser and is never
+  written anywhere.
+- `running jobs` uses the same rule as the concurrency gate, so the panel and the
+  gate never disagree about what "running" means.
+
 ## Connection reuse
 
 Every call opens its own ssh connection, which costs a full handshake. With

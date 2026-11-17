@@ -13,7 +13,7 @@ import { resolve } from 'node:path'
 import { resolveConfig, selectServer, serverNameFromJobId } from './lib/config.js'
 import { createKeyStore } from './lib/keys.js'
 import { assertCommandAllowed, assertUploadAllowed } from './lib/guard.js'
-import { startJob, waitJob, jobStatus, readLog, killJob, listJobs, probeServer } from './lib/remote.js'
+import { startJob, waitJob, jobStatus, readLog, killJob, listJobs, probeServer, monitorServer } from './lib/remote.js'
 import { cleanupControlSockets } from './lib/ssh.js'
 import { readSshConfigFile } from './lib/sshconfig.js'
 import { upload, download } from './lib/transfer.js'
@@ -79,6 +79,8 @@ const SERVERS_ROUTE = '/dsh-ssh-compute/servers'
 const TEST_ROUTE = '/dsh-ssh-compute/test'
 /** The hosts this machine's own ssh already knows, offered to the settings form. */
 const SSH_CONFIG_ROUTE = '/dsh-ssh-compute/ssh-config'
+/** One poll of the status panel: every server, sampled in parallel. */
+const MONITOR_ROUTE = '/dsh-ssh-compute/monitor'
 
 /** Read a JSON body with a small ceiling; these payloads are one server name. */
 async function readJsonBody(request) {
@@ -574,5 +576,35 @@ export function apply(ctx, settings = {}) {
         })
       }
     }, 'dsh-ssh-compute: ssh config route')
+
+    // The status panel's poll. One request per refresh, one connection per
+    // server, all servers in parallel; a failure is reported per server rather
+    // than failing the whole poll, because one unreachable host must not blank
+    // the panel.
+    publish(MONITOR_ROUTE, async (request, response) => {
+      if (request.method !== 'GET') {
+        response.writeHead(405, { allow: 'GET' })
+        response.end()
+        return
+      }
+      const config = resolveConfig(settings)
+      const at = Date.now()
+      const servers = await Promise.all(config.servers.map(async (server) => {
+        const identity = { name: server.name, host: server.host, port: server.port, user: server.user }
+        try {
+          const keyFile = keyStore.fileFor(server)
+          const sample = await monitorServer({ config, server, keyFile })
+          return { ...identity, ok: true, ...sample }
+        } catch (error) {
+          return {
+            ...identity,
+            ok: false,
+            error: error instanceof Error ? error.message : String(error),
+            durationMs: Date.now() - at,
+          }
+        }
+      }))
+      answerJson(response, 200, { at, remoteRoot: config.remoteRoot, servers, problems: config.problems })
+    }, 'dsh-ssh-compute: monitor route')
   })
 }

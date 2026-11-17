@@ -27,6 +27,14 @@ window.__ModuleLoader__.load({
     const SERVERS_ROUTE = '/dsh-ssh-compute/servers'
     const TEST_ROUTE = '/dsh-ssh-compute/test'
     const SSH_CONFIG_ROUTE = '/dsh-ssh-compute/ssh-config'
+    /** One poll of the status panel. */
+    const MONITOR_ROUTE = '/dsh-ssh-compute/monitor'
+    /** The rail entry and the main panel that shares this id. */
+    const PANEL_ID = 'dsh-ssh-servers'
+    /** How often the panel polls while it is the visible tab. */
+    const POLL_MS = 30000
+    /** Samples kept per server for the trend line (40 x 30 s = 20 minutes). */
+    const HISTORY = 40
     const LOCALE_NAMESPACE = 'dshSshCompute'
 
     /** The scalar settings, in the order the form draws them. */
@@ -46,6 +54,22 @@ window.__ModuleLoader__.load({
 
     const en = {
       title: 'Servers',
+      panelTitle: 'Server status',
+      panelRefresh: 'Refresh',
+      panelAuto: 'Auto',
+      panelUpdated: 'sampled',
+      panelLoading: 'Sampling every server…',
+      panelFailed: 'Could not sample the servers',
+      panelEmpty: 'No servers configured. Add one in the plugin settings.',
+      panelOffline: 'unreachable',
+      panelLoad: 'load',
+      panelCores: 'cores',
+      panelMemory: 'memory',
+      panelDisk: 'disk free',
+      panelJobs: 'jobs',
+      panelUptime: 'up',
+      panelTrend: 'load, last 20 minutes',
+      panelHint: 'One SSH connection per server per poll; nothing is installed on them.',
       intro: 'Each row is one entry from this plugin\'s settings. Test opens one SSH connection and reports what the machine is.',
       remoteRoot: 'Jobs directory',
       noServers: 'No servers configured yet. Add one below, or in the plugin settings.',
@@ -133,6 +157,22 @@ window.__ModuleLoader__.load({
 
     const zh = {
       title: '服务器',
+      panelTitle: '服务器状态',
+      panelRefresh: '刷新',
+      panelAuto: '自动',
+      panelUpdated: '采样于',
+      panelLoading: '正在采样所有服务器…',
+      panelFailed: '无法采样服务器',
+      panelEmpty: '还没有配置服务器。去插件设置里添加。',
+      panelOffline: '无法连接',
+      panelLoad: '负载',
+      panelCores: '核',
+      panelMemory: '内存',
+      panelDisk: '可用磁盘',
+      panelJobs: '运行中任务',
+      panelUptime: '已运行',
+      panelTrend: '负载，最近 20 分钟',
+      panelHint: '每次刷新每台服务器一条 SSH 连接；不在服务器上安装任何东西。',
       intro: '每一行是插件设置里的一台服务器。点「测试」会建立一次 SSH 连接，并报告这台机器是什么。',
       remoteRoot: '任务目录',
       noServers: '还没有配置服务器。在下面添加一台，或去插件设置里添加。',
@@ -263,6 +303,28 @@ window.__ModuleLoader__.load({
       '.dsh-ssh-note { font-size: 12px; line-height: 1.5; }',
       '.dsh-ssh-dirty { margin-left: auto; font-size: 12px; color: var(--dsw-alias-state-warn-primary); }',
       '.dsh-ssh-link { border: none; background: none; padding: 0; font: inherit; font-size: 12px; color: var(--dsw-alias-state-error-primary); cursor: pointer; }',
+      '.dsh-ssh-monitor { display: flex; flex-direction: column; gap: 14px; padding: 20px; max-width: 1080px; margin: 0 auto; }',
+      '.dsh-ssh-monitor-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }',
+      '.dsh-ssh-monitor-title { margin: 0; font-size: 16px; font-weight: 600; color: var(--dsw-alias-label-primary); }',
+      '.dsh-ssh-monitor-actions { display: flex; align-items: center; gap: 12px; margin-left: auto; }',
+      '.dsh-ssh-monitor-stamp { font-size: 12px; color: var(--dsw-alias-label-secondary); }',
+      '.dsh-ssh-monitor-card { border: 1px solid var(--dsw-alias-border-l1); border-radius: 10px; background: var(--dsw-alias-bg-layer-1); overflow: hidden; }',
+      '.dsh-ssh-monitor-row { display: grid; grid-template-columns: minmax(200px, 1.1fr) minmax(300px, 2fr) 140px; gap: 16px; align-items: center; padding: 12px 14px; }',
+      '.dsh-ssh-monitor-row + .dsh-ssh-monitor-row { border-top: 1px solid var(--dsw-alias-border-l1); }',
+      '.dsh-ssh-monitor-main { display: flex; align-items: center; gap: 8px; min-width: 0; }',
+      '.dsh-ssh-monitor-dot { width: 8px; height: 8px; border-radius: 999px; flex: none; background: var(--dsw-alias-state-success-primary); }',
+      '.dsh-ssh-monitor-dot[data-state="busy"] { background: var(--dsw-alias-state-warn-primary); }',
+      '.dsh-ssh-monitor-dot[data-state="down"] { background: var(--dsw-alias-state-error-primary); }',
+      '.dsh-ssh-monitor-name { font-size: 13px; font-weight: 600; color: var(--dsw-alias-label-primary); }',
+      '.dsh-ssh-monitor-target { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; color: var(--dsw-alias-label-secondary); overflow-wrap: anywhere; }',
+      '.dsh-ssh-monitor-metrics { display: flex; flex-wrap: wrap; gap: 4px 16px; }',
+      '.dsh-ssh-monitor-metric { font-size: 12px; color: var(--dsw-alias-label-secondary); }',
+      '.dsh-ssh-monitor-metric b { font-weight: 600; color: var(--dsw-alias-label-primary); }',
+      '.dsh-ssh-monitor-error { font-size: 12px; line-height: 1.5; color: var(--dsw-alias-state-error-primary); overflow-wrap: anywhere; }',
+      '.dsh-ssh-spark { display: block; color: var(--dsw-alias-brand-primary); }',
+      '.dsh-ssh-spark-empty { font-size: 11px; color: var(--dsw-alias-label-secondary); }',
+      '.dsh-ssh-monitor-foot { margin: 0; font-size: 12px; line-height: 1.5; color: var(--dsw-alias-label-secondary); }',
+      '@media (max-width: 820px) { .dsh-ssh-monitor-row { grid-template-columns: 1fr; gap: 8px; } }',
       '.dsh-ssh-import { border: 1px solid var(--dsw-alias-border-l1); background: var(--dsw-alias-bg-layer-2); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 8px; }',
       '.dsh-ssh-import-list { display: flex; flex-direction: column; gap: 2px; max-height: 320px; overflow-y: auto; }',
       '.dsh-ssh-import-row { display: flex; align-items: flex-start; gap: 10px; padding: 6px 4px; border-radius: 6px; cursor: pointer; }',
@@ -362,6 +424,225 @@ window.__ModuleLoader__.load({
       push(t('load'), facts.load)
       push(t('gpu'), facts.gpu === 'none' ? undefined : facts.gpu)
       return rows
+    }
+
+    // ------------------------------------------------------------- status panel
+
+    /** A megabyte count as a short human string; zero means "not reported". */
+    function formatMb(mb) {
+      if (!Number.isFinite(mb) || mb <= 0) return '—'
+      return mb >= 1024 ? `${(mb / 1024).toFixed(mb >= 10240 ? 0 : 1)} GiB` : `${Math.round(mb)} MiB`
+    }
+
+    /** Seconds of uptime as `3d 4h` / `4h 12m` / `12m`. */
+    function formatUptime(seconds) {
+      if (!Number.isFinite(seconds) || seconds <= 0) return '—'
+      const days = Math.floor(seconds / 86400)
+      const hours = Math.floor((seconds % 86400) / 3600)
+      const minutes = Math.floor((seconds % 3600) / 60)
+      if (days > 0) return `${days}d ${hours}h`
+      if (hours > 0) return `${hours}h ${minutes}m`
+      return `${minutes}m`
+    }
+
+    /** A local wall-clock time, or nothing when the browser refuses to format. */
+    function formatClock(ms) {
+      try {
+        return new Date(ms).toLocaleTimeString()
+      } catch {
+        return ''
+      }
+    }
+
+    /**
+     * The trend line. It lives in the browser and is never written anywhere: the
+     * panel is a glance at the last twenty minutes, not a time-series store.
+     */
+    function Sparkline(props) {
+      const values = props.values
+      const empty = props.empty
+      if (!Array.isArray(values) || values.length < 2) {
+        return h('span', { className: 'dsh-ssh-spark-empty' }, empty)
+      }
+      const width = 132
+      const height = 30
+      const max = Math.max(...values, 1)
+      const step = width / (values.length - 1)
+      const points = values
+        .map((value, index) => `${(index * step).toFixed(1)},${(height - 3 - (value / max) * (height - 6)).toFixed(1)}`)
+        .join(' ')
+      return h('svg', {
+        className: 'dsh-ssh-spark',
+        viewBox: `0 0 ${width} ${height}`,
+        width,
+        height,
+        role: 'img',
+        'aria-label': props.label,
+      }, h('polyline', {
+        points,
+        fill: 'none',
+        stroke: 'currentColor',
+        strokeWidth: '1.5',
+        strokeLinejoin: 'round',
+        strokeLinecap: 'round',
+      }))
+    }
+
+    /**
+     * Append one poll to a server's trend.
+     *
+     * A failed sample keeps the line it had: an unreachable host is not zero
+     * load, and drawing it as zero would read as "the machine went idle".
+     * @param series - server name -> load samples.
+     * @param server - one entry from the monitor route.
+     * @returns the series map with this sample folded in.
+     */
+    function appendSample(series, server) {
+      const previous = series[server.name] ?? []
+      const load = Array.isArray(server.load) ? server.load[0] : undefined
+      const next = server.ok === true && Number.isFinite(load) ? [...previous, load].slice(-HISTORY) : previous
+      return { ...series, [server.name]: next }
+    }
+
+    /** The rail entry: an 18x18 rack glyph in `currentColor`, so the sidebar's own state colours show through. */
+    function ServerIcon(props) {
+      const size = typeof props.size === 'number' ? props.size : 18
+      return h('svg', {
+        width: size,
+        height: size,
+        viewBox: '0 0 20 20',
+        fill: 'none',
+        stroke: 'currentColor',
+        strokeWidth: '1.5',
+        strokeLinecap: 'round',
+        strokeLinejoin: 'round',
+        'aria-hidden': 'true',
+        focusable: 'false',
+      },
+      h('rect', { x: '3.5', y: '3.5', width: '13', height: '5', rx: '1.2' }),
+      h('rect', { x: '3.5', y: '11.5', width: '13', height: '5', rx: '1.2' }),
+      h('path', { d: 'M6 6h.01M6 14h.01' }))
+    }
+
+    /**
+     * The main panel. One row per configured server: reachability, load, memory,
+     * free space, live jobs, uptime, and a twenty-minute trend of the 1-minute
+     * load. Polling stops while the document is hidden, so a background tab does
+     * not open SSH connections all day.
+     */
+    function MonitorPanel(props) {
+      const t = props.t
+      const [state, setState] = useState({ status: 'loading', at: 0, servers: [], series: {}, problems: [], error: '' })
+      const [auto, setAuto] = useState(true)
+      const [busy, setBusy] = useState(false)
+
+      const refresh = useCallback(async () => {
+        setBusy(true)
+        try {
+          const payload = await readJson(MONITOR_ROUTE)
+          setState((current) => {
+            let series = current.series
+            for (const server of Array.isArray(payload?.servers) ? payload.servers : []) {
+              series = appendSample(series, server)
+            }
+            return {
+              status: 'ready',
+              at: Number(payload?.at) || Date.now(),
+              servers: Array.isArray(payload?.servers) ? payload.servers : [],
+              series,
+              problems: Array.isArray(payload?.problems) ? payload.problems : [],
+              error: '',
+            }
+          })
+        } catch (error) {
+          setState((current) => ({ ...current, status: 'failed', error: String(error?.message ?? error) }))
+        } finally {
+          setBusy(false)
+        }
+      }, [])
+
+      useEffect(() => {
+        let live = true
+        const tick = () => {
+          if (!live) return
+          if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
+          void refresh()
+        }
+        tick()
+        if (!auto) return () => { live = false }
+        const timer = setInterval(tick, POLL_MS)
+        return () => {
+          live = false
+          clearInterval(timer)
+        }
+      }, [auto, refresh])
+
+      const rows = state.servers.map((server) => {
+        const series = state.series[server.name] ?? []
+        const load = Array.isArray(server.load) ? server.load : []
+        const busyScore = server.cpus > 0 && load[0] > server.cpus
+        const dotState = server.ok !== true ? 'down' : (busyScore ? 'busy' : 'ok')
+        return h('div', { className: 'dsh-ssh-monitor-row', key: server.name },
+          h('div', { className: 'dsh-ssh-monitor-main' },
+            h('span', { className: 'dsh-ssh-monitor-dot', 'data-state': dotState }),
+            h('span', { className: 'dsh-ssh-monitor-name' }, server.name),
+            h('span', { className: 'dsh-ssh-monitor-target' }, `${server.user}@${server.host}:${server.port}`)),
+          server.ok === true
+            ? h('div', { className: 'dsh-ssh-monitor-metrics' },
+              h('span', { className: 'dsh-ssh-monitor-metric' }, `${t('panelLoad')} `,
+                h('b', null, load.length > 0 ? load.map((value) => value.toFixed(2)).join(' / ') : '—'),
+                server.cpus > 0 ? ` · ${server.cpus} ${t('panelCores')}` : ''),
+              h('span', { className: 'dsh-ssh-monitor-metric' }, `${t('panelMemory')} `,
+                h('b', null, server.memTotalMb > 0
+                  ? `${formatMb(server.memTotalMb - server.memAvailableMb)} / ${formatMb(server.memTotalMb)}`
+                  : '—')),
+              h('span', { className: 'dsh-ssh-monitor-metric' }, `${t('panelDisk')} `,
+                h('b', null, formatMb(server.diskFreeMb))),
+              h('span', { className: 'dsh-ssh-monitor-metric' }, `${t('panelJobs')} `,
+                h('b', null, String(server.runningJobs ?? 0))),
+              h('span', { className: 'dsh-ssh-monitor-metric' }, `${t('panelUptime')} `,
+                h('b', null, formatUptime(server.uptimeSec))))
+            : h('div', { className: 'dsh-ssh-monitor-error' },
+              `${t('panelOffline')}: ${server.error ?? ''}`),
+          h(Sparkline, { values: series, empty: t('panelTrend'), label: t('panelTrend') }))
+      })
+
+      return h('div', { className: 'dsh-ssh-monitor' },
+        h('div', { className: 'dsh-ssh-monitor-head' },
+          h('h2', { className: 'dsh-ssh-monitor-title' }, t('panelTitle')),
+          state.at === 0
+            ? null
+            : h('span', { className: 'dsh-ssh-monitor-stamp' }, `${t('panelUpdated')} ${formatClock(state.at)}`),
+          h('div', { className: 'dsh-ssh-monitor-actions' },
+            h('label', { className: 'dsh-ssh-check' },
+              h('input', {
+                type: 'checkbox',
+                checked: auto,
+                onChange: (event) => setAuto(event.target.checked),
+              }),
+              h('span', null, t('panelAuto'))),
+            h('button', {
+              type: 'button',
+              className: 'dsh-ssh-compute-button',
+              disabled: busy,
+              onClick: () => { void refresh() },
+            }, t('panelRefresh')))),
+        state.status === 'loading'
+          ? h('p', { className: 'dsh-ssh-compute-hint' }, t('panelLoading'))
+          : null,
+        state.status === 'failed'
+          ? h('p', { className: 'dsh-ssh-monitor-error' }, `${t('panelFailed')}: ${state.error}`)
+          : null,
+        state.status !== 'loading' && state.servers.length === 0
+          ? h('p', { className: 'dsh-ssh-compute-hint' }, t('panelEmpty'))
+          : null,
+        state.servers.length > 0
+          ? h('div', { className: 'dsh-ssh-monitor-card' }, rows)
+          : null,
+        state.problems.length > 0
+          ? h('p', { className: 'dsh-ssh-monitor-error' }, state.problems.join('; '))
+          : null,
+        h('p', { className: 'dsh-ssh-monitor-foot' }, t('panelHint')))
     }
 
     // ---------------------------------------------------------------- detail page
@@ -971,7 +1252,7 @@ window.__ModuleLoader__.load({
       inject: ['slots', 'locale'],
       // Pure helpers exposed for the offline tests only; the module loader reads
       // `inject` and `apply` and ignores everything else.
-      __test: { mergeImportedServers, canonicalServers, toDraft, toOps, sameDraft },
+      __test: { mergeImportedServers, canonicalServers, toDraft, toOps, sameDraft, formatMb, formatUptime, appendSample },
       apply(ctx) {
         ctx.effect(() => ctx.locale.register(LOCALE_NAMESPACE, { en, zh }), 'dsh-ssh-compute: locale')
 
@@ -1052,6 +1333,33 @@ window.__ModuleLoader__.load({
           order: 60,
           locale: LOCALE_NAMESPACE,
         }, (props) => h(ComputeSection, { ...props, source: configSource })))
+
+        // The status panel. `sidebar.panellist` draws the rail button — its entry
+        // IS the icon — and `main` holds the page that same id opens; the pair is
+        // registered from the inner callback so it appears or vanishes as one.
+        // `ctx.locale.bind` returns a translate function that reads the active
+        // locale when called, which is what a label thunk needs to stay localized
+        // without re-registering.
+        const panelLabel = typeof ctx.locale?.bind === 'function'
+          ? ctx.locale.bind(LOCALE_NAMESPACE)
+          : translator(undefined)
+        ctx.slots.inject('main', () => ctx.slots.inject('sidebar.panellist', () => {
+          const stopPanel = ctx.slots.register({
+            name: 'main',
+            key: PANEL_ID,
+            inject: () => ({ t: panelLabel }),
+          }, MonitorPanel)
+          const stopIcon = ctx.slots.register({
+            name: 'sidebar.panellist',
+            id: PANEL_ID,
+            order: 60,
+            label: () => panelLabel('panelTitle'),
+          }, ServerIcon)
+          return () => {
+            if (typeof stopIcon === 'function') stopIcon()
+            if (typeof stopPanel === 'function') stopPanel()
+          }
+        }))
       },
     }
   },
