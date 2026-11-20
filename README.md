@@ -269,10 +269,16 @@ still sampled.
 
 ## Compatibility
 
-Requires DSH `>=0.2.2-rc.3` (`engines.dsh` refuses older hosts, because the
+Requires DSH `>=0.2.2-rc.3`. `engines.dsh` refuses older hosts because the
 settings form uses the `plugins.row.config` slot and the `configForms` client
-service). Verified against 0.2.2-rc.3 on Windows 11 (Windows OpenSSH,
-`tar.exe`) with Ubuntu 24.04 remotes.
+service; the floor is the oldest release this was verified on, not a ceiling, so
+every newer release is admitted too.
+
+Verified on `0.2.2-rc.3` and on the current `0.2.2-rc.5`, on Windows 11
+(Windows OpenSSH, `tar.exe`) against Ubuntu 24.04 remotes. On `0.2.2-rc.5` the
+tool registers, its Config schema projects with every field volatile, the rail
+panel registers, and the peer dependency resolves against schemastery `3.19.0`
+(the declared range is `^3.18.1`).
 
 ## Releasing
 
