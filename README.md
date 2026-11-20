@@ -269,16 +269,33 @@ still sampled.
 
 ## Compatibility
 
-Requires DSH `>=0.2.2-rc.3`. `engines.dsh` refuses older hosts because the
-settings form uses the `plugins.row.config` slot and the `configForms` client
-service; the floor is the oldest release this was verified on, not a ceiling, so
-every newer release is admitted too.
+Requires DSH `>=0.2.2-rc.1`. `engines.dsh` refuses older hosts; the floor is the
+oldest release whose surfaces this plugin was checked against, and every newer
+release is admitted.
 
-Verified on `0.2.2-rc.3` and on the current `0.2.2-rc.5`, on Windows 11
-(Windows OpenSSH, `tar.exe`) against Ubuntu 24.04 remotes. On `0.2.2-rc.5` the
-tool registers, its Config schema projects with every field volatile, the rail
-panel registers, and the peer dependency resolves against schemastery `3.19.0`
-(the declared range is `^3.18.1`).
+| Surface | rc.1 | rc.3 and later |
+| --- | --- | --- |
+| the `ssh-compute` tool, all eight actions | yes | yes |
+| settings form (`plugins.row.config` + `configForms`) | yes | yes |
+| server list on the plugin page (`plugins.detail.section`) | yes | yes |
+| status panel in the left rail | only where `sidebar.panellist` exists | yes |
+
+Checked on `0.2.2-rc.5` end to end: the tool registers, its Config entry projects
+with every field volatile, the rail panel registers, and the peer dependency
+resolves against schemastery `3.19.0` (the declared range is `^3.18.1`).
+
+Checked for `0.2.2-rc.1` by reading that release's published packages:
+`plugins.row.config`, `plugins.bundle.config` and `plugins.detail.section` are all
+present in its plugin manager, `configForms` is present, and its settings client
+already handles volatile fields. The upgrade guides shipped with rc.5 record no
+break between rc.1 and rc.5 on any surface used here — the only plugin-related
+item is `BundleInfo.updatable` becoming `update`, which concerns
+`pluginManager.listBundles()` and is not called by this plugin.
+
+The status panel is registered through `ctx.slots.inject`, so on a host that does
+not declare `sidebar.panellist` the panel never appears and nothing else is
+affected: the pair is registered from inside the injection callback, and the
+slots contract makes registering into an undeclared slot fail at activation.
 
 ## Releasing
 
